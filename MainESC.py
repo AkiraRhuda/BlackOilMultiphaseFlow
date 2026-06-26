@@ -68,25 +68,33 @@ def MultiPhaseFlowModeloptimize(Dh):
         Modelo.run()
         print(Dh)
         if isinstance(Modelo.abserro, float) is True:
-            return Modelo.abserro
+            return abs(Modelo.abserro)
         else:
-            print(Modelo.abserro)
+            print(abs(Modelo.abserro))
             return 1e5
     except:
         return 1e10
 
 
-# from scipy.optimize import minimize
+from scipy.optimize import minimize
 # from scipy.optimize import root
-# D_ideal = minimize(MultiPhaseFlowModeloptimize,x0=[4], bounds=[[0.5,7]],method='Nelder-Mead')
+# from scipy.optimize import root_scalar
+# D_ideal  = root_scalar(
+#     MultiPhaseFlowModeloptimize,
+#     bracket=[3.0,3.5],
+#     method='brentq',
+#     xtol=1e-4
+# )
+
+D_ideal = minimize(MultiPhaseFlowModeloptimize,x0=[4], bounds=[[0.5,7]],method='Nelder-Mead')
+# 2.2341
 # print(D_ideal.x)
 # D_ideal = root(MultiPhaseFlowModeloptimize,x0=7,method='hybr')
-D_ideal_novo = 3.73 # pol
-D_ideal = [unitsconverter.Length(D_ideal_novo, 'in', 'm')]
-
+# D_ideal_novo = 3.9 # pol
+D_ideal = [unitsconverter.Length(D_ideal.x , 'in', 'm')]
 Modelo = MultiPhaseFlowModel(model='homogeneo', temperature=T, pressure=P, dg=dg, salinity=salinidade, do=do, diameters=D_ideal,rugosity=rugos_temp, incli=inclinacoes, rho_o=rho_o,
                              rho_g=rho_g, rho_w=rho_w, QLsc=Q,Bo=Bo, Bw=Bw, Bg=Bg, Bsw=BSW, RGL=RGL, Rs=Rs, Rsw=Rsw,
-                             mu_o=mu_o, mu_w=mu_w, mu_g=mu_g, sig_og=sig_og, sig_wg=sig_wg, Z=Gas.Z, length=[L_poco,L_solomarinho,L_riser], N_division= 1000, reference_pressure=P_ref, postprocess=True)
+                             mu_o=mu_o, mu_w=mu_w, mu_g=mu_g, sig_og=sig_og, sig_wg=sig_wg, Z=Gas.Z, length=[L_poco,L_solomarinho,L_riser], N_division= 100, reference_pressure=P_ref, postprocess=True)
 Modelo.run()
 
 """

@@ -56,14 +56,20 @@ class GasPhase:
         if self.dg is None:
             raise ValueError("Densidade relativa do gás (dg) precisa ser informada.")
         self.Mg = self.dg * 28.96 # lb / lbmol
-        self.Psc = 14.7 # psia
-        self.Tsc = 60 # F
+        self.Psc = 14.696  # psi
+        self.Tsc = 519.67  # °R (60°F)
     
     def ρ_g(self):
         R = 10.73 # psia·ft³/ (lb·mol·°R)
         self.ρ = (self.P * self.Mg)/(self.Z * R * self.T)
         
     def Bg(self):
+        """
+        Retorna Bg em ft³/scf.
+
+        P e Psc em psi.
+        T e Tsc em Rankine.
+        """
         return self.Psc/(self.Tsc) * self.Z * self.T/self.P # SERA QUE É EM FAHRENHEIT MESMOOO ?????????? unitsconverter.Temperature(self.T, 'R', 'F')
         
     def zfactcorrelselector(self):
