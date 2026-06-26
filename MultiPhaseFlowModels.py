@@ -228,12 +228,6 @@ class MultiPhaseFlowModel:
                         # Atualizar a Temperatura
                         Temp_Pressure = self.Pressure[-1] + float(PerdaCarga)
 
-                        """if self.model_instance.K <= -1:
-                            print(
-                                f"\nEscoamento Crítico atingido em L={actual_pos:.2f} m. A simulação foi interrompida pois Mach atingiu 1.")
-                            self.exception = True
-                            break"""
-
                         if Temp_Pressure <= 0 or Temp_Pressure != Temp_Pressure:
                             print(
                                 f"\nPressão chegou a zero na posição L={actual_pos:.2f} m. O poço não tem energia para fluir até a superfície.")
