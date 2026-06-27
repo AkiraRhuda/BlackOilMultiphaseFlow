@@ -1,7 +1,8 @@
 import numpy as np
 import select
-
+import math
 import unitsconverter
+import MixtureTemperature
 
 
 class MultiPhaseFlowModel:
@@ -14,8 +15,8 @@ class MultiPhaseFlowModel:
         Informa o tipo de modelo a ser utilizado para calcular as propriedades do fluido em cada trecho do poço.
         Suporta Homogêneo e Drift-Flux
         Se informar somente um modelo, este será utilizado em tod0 o poço.
-    temperature : float
-        Temperatura do fluido em K
+    temperature : list
+        Temperatura do fluido em K para cada trecho
     pressure : float
         Pressão do fluido em Pa
     reference_pressure : float
@@ -93,7 +94,7 @@ class MultiPhaseFlowModel:
             Bsw = None,RGL = None, RGO = None, Rs = None, Rsw = None, mu_o = None, mu_w = None, mu_g = None, mu_l = None, sig_og = None,
             sig_wg = None, sig_lg = None, Z = None, length : list = None, N_division=None, reference_pressure = None, postprocess=False):
         self.model = model
-        self.temperature = temperature
+        self.temperature = [temperature]
         self.initial_pressure = pressure
         self.Pressure = [pressure]
         self.rho_o = rho_o
@@ -118,6 +119,8 @@ class MultiPhaseFlowModel:
         self.Bg = Bg
         self.Bsw = Bsw/100 if Bsw is not None else 0
         self.RGL = RGL
+        if RGO is not None and self.RGL is None and self.Bsw != 0:
+            self.RGL = RGO*(1-self.Bsw)
         self.RGO = RGO
         self.Rs = Rs
         self.Rsw = Rsw
@@ -134,6 +137,7 @@ class MultiPhaseFlowModel:
         self.Pref = reference_pressure
         self.postprocess = postprocess
         self.exception = False
+        self.Qmassica = []
 
         if (self.Bo is None and self.Bw is None or self.Bg is None or self.RGL is None  and self.RGO is None or self.Rs is None  and self.Rsw
                 is None or self.mu_o is None and self.mu_w is None and self.mu_l is None or self.mu_g is None or self.sig_og is None  and
@@ -142,13 +146,13 @@ class MultiPhaseFlowModel:
                 self.do = unitsconverter.Density(self.rho_o, 'kg/m3', 'do')
             if self.dg is None:
                 self.dg = unitsconverter.Density(self.rho_g, 'kg/m3', 'dg')
-            self.update_PVT_properties(unitsconverter.Temperature(self.temperature,'K','C'), self.Pressure[-1], self.do, self.dg, self.RGL,self.Bsw, self.salinity)
+            self.update_PVT_properties(unitsconverter.Temperature(self.temperature[-1],'K','C'), self.Pressure[-1], self.do, self.dg, self.RGL,self.Bsw, self.salinity)
 
         if self.Bw is not None and self.RGL is None or self.RGL is not None and self.Bw is None and self.QLsc is None:
             raise Exception('Verifique se está sendo fornecido RGL e Bw!')
 
-        if self.RGL is not None and self.RGO is not None and self.QLsc is None:
-            raise Exception('Não é possível utilizar RGO e RGL simultaneamente!')
+        # if self.RGL is not None and self.RGO is not None and self.QLsc is None:
+        #     raise Exception('Não é possível utilizar RGO e RGL simultaneamente!')
 
         if self.QLsc is not None and self.QOsc is not None and self.QWsc is not None:
             if self.QLsc != self.QOsc + self.QWsc:
@@ -222,11 +226,14 @@ class MultiPhaseFlowModel:
             self.Pos = [0]
             self.VM = [0] # supondo velocidade inicial igual a 0 no início do poço
             actual_pos = 0
+            actual_depth = 0
+            for L, theta in zip(self.length, self.incli):
+                actual_depth += L*np.sin(theta*np.pi/180)
             for L, theta, model in zip(self.length, self.incli, self.model):
                 self.select_model(model)
                 accumulated_L = 0
                 while accumulated_L < L - 1e-4:
-                    if 1000 < actual_pos < 1099:
+                    """if 1000 < actual_pos < 1099:
                         print('aqui')
                         print(actual_pos)
                         print(self.vm)
@@ -242,16 +249,28 @@ class MultiPhaseFlowModel:
                         print("QO", self.QO)
                         print("Bw", self.Bw)
                         print("QW", self.QW)
-                        print("QL", self.QL)
+                        print("QL", self.QL)"""
                     # O dl pode ser alterado caso o poço não seja totalmente percorrido pelo algoritmo, gerando um dl que completa o poço!!!
                     current_dl = self.dl
                     if accumulated_L + current_dl > L:
                         current_dl = L - accumulated_L
-                    PerdaCarga = self.model_instance.output(dl=current_dl, incli=theta)
+                    actual_depth -= current_dl * np.sin(theta * np.pi / 180)
 
-                    # Atualizar a Temperatura
+                    PerdaCarga = self.model_instance.output(dl=current_dl, incli=theta)
                     Temp_Pressure = self.Pressure[-1] + float(PerdaCarga)
 
+                    try:
+                        Temp_Temperature = MixtureTemperature.Temperature(T=self.temperature[-1], P=Temp_Pressure, rho_o=self.rho_o,
+                                            QO=self.QO, QW=self.QW, QL=self.QL, Mg=self.model_instance.Mg, HL=self.model_instance.H_L).Calculate_Temperature(
+                            dl=current_dl, depth=actual_depth, m_dot_m=self.model_instance.mass_flow, theta=theta)
+                        if Temp_Temperature!=Temp_Temperature:
+                            Temp_Temperature = self.temperature[-1]
+                            print(f'Erro no cálculo da temperatura na profundidade {actual_depth} m!\nReplicando a temperatura anterior para não quebrar o códgio')
+
+                    except:
+                        Temp_Temperature = self.temperature[-1]
+                        print(f'Erro no cálculo da temperatura na profundidade {actual_depth} m!\nReplicando a temperatura anterior para não quebrar o códgio')
+                    print(Temp_Temperature)
                     if Temp_Pressure <= 0 or Temp_Pressure != Temp_Pressure:
                         print(
                             f"\nPressão chegou a zero na posição L={actual_pos:.2f} m. O poço não tem energia para fluir até a superfície.")
@@ -260,7 +279,7 @@ class MultiPhaseFlowModel:
 
                     if isinstance(Temp_Pressure, float) is not True and isinstance(Temp_Pressure, int) is not True:
                         raise ValueError('Pressão assumiu not a number! Verifique a entrada de dados!')
-                    self.update_PVT_properties(unitsconverter.Temperature(self.temperature, 'K', 'C'),
+                    self.update_PVT_properties(unitsconverter.Temperature(self.temperature[-1], 'K', 'C'),
                                                                   Temp_Pressure, self.do,
                                                                   self.dg,
                                                                   self.RGL,
@@ -268,6 +287,7 @@ class MultiPhaseFlowModel:
                                                                   self.salinity)
                     actual_pos += current_dl
                     accumulated_L += current_dl
+                    self.temperature.append(Temp_Temperature)
                     self.Pressure.append(Temp_Pressure) # 44866301.289638236
                     self.VM.append(self.vm)
                     self.Pos.append(actual_pos)
@@ -294,7 +314,7 @@ class MultiPhaseFlowModel:
                     self.abserro = np.inf
                     self.relerro = np.inf
 
-            self.PostProcess(self.Pressure, self.Pos,self.VM) # arrumar essas variaveis de entrada...
+            self.PostProcess(self.Pressure, self.Pos,self.VM, self.temperature) # arrumar essas variaveis de entrada...
 
         else:
             for theta, model in zip(self.incli, self.model):
@@ -307,6 +327,8 @@ class MultiPhaseFlowModel:
         elif model.lower() == 'drift-flux' or model.lower() == 'driftflux':
             self.model_instance = DriftFluxModel(self)
             pass
+        elif model.lower() == 'beggs' or model.lower() == 'beggsandbrill' or model.lower() == 'beggs&brill':
+            self.model_instance = BeggsandBrillModel(self)
         else:
             raise Exception(f'{self.model} não é suportado!\nUse o modelo Homogêneo ou Drift-Flux')
 
@@ -360,12 +382,13 @@ class MultiPhaseFlowModel:
                             self.QLsc = self.QOsc/(1-self.Bsw)
                             self.QWsc = self.QLsc * self.Bsw
                         else:
-                            self.QLsc = self.QWsc / self.Bsw
-                            self.QOsc = self.QLsc * (1-self.Bsw)
-
-                    self.QO = self.QOsc * self.Bo
-                    self.QW = self.QWsc * self.Bw
-                    self.QL = self.QO + self.QW
+                            if self.QWsc is not None:
+                                self.QLsc = self.QWsc / self.Bsw
+                                self.QOsc = self.QLsc * (1-self.Bsw)
+                    if self.QOsc is not None and self.QWsc is not None:
+                        self.QO = self.QOsc * self.Bo
+                        self.QW = self.QWsc * self.Bw
+                        self.QL = self.QO + self.QW
 
         if force_update is True:
             self.QO = self.QOsc * self.Bo
@@ -396,13 +419,15 @@ class MultiPhaseFlowModel:
         print('ql',self.QL)
         print('qg',self.QG)
         self.vm = self.vsl + self.vsg
-        print('bo',self.Bo)
-        print('Bg',self.Bg)
-        print('massica_o: ',self.rho_o * self.QO)
-        print('massica_w: ',self.rho_w * self.QW)
-        print('massica_g: ',self.rho_g * self.QG)
-        print('massica_total: ',self.rho_o * self.QO+self.rho_w * self.QW+self.rho_g * self.QG)
-        print('\n\n\n')
+        if self.Bo is not None and self.Bg is not None and self.rho_o is not None and self.rho_w is not None:
+            print('bo',self.Bo)
+            print('Bg',self.Bg)
+            print('massica_o: ',self.rho_o * self.QO)
+            print('massica_w: ',self.rho_w * self.QW)
+            print('massica_g: ',self.rho_g * self.QG)
+            print('massica_total: ',self.rho_o * self.QO+self.rho_w * self.QW+self.rho_g * self.QG)
+            self.Qmassica.append(self.rho_o * self.QO+self.rho_w * self.QW+self.rho_g * self.QG)
+            print('\n\n\n')
 
     def fractions(self):
         # Drift Flux nõa usa isso...
@@ -439,10 +464,15 @@ class MultiPhaseFlowModel:
             self.dl = None
 
 
-    def PostProcess(self, pressure, position, vm):
+    def PostProcess(self, pressure, position, vm, temperature):
         if self.postprocess is True:
+            print(self.Qmassica[0]- self.Qmassica[-1])
+            print(100*(self.Qmassica[0] - self.Qmassica[-1])/self.Qmassica[-1])
+            print(self.Qmassica[0])
+            print(self.Qmassica[-1])
             import PostProcess
-            PostProcess.run(pressure, position, vm)
+
+            PostProcess.run(pressure, position, vm, temperature)
 
 
 
@@ -458,6 +488,10 @@ class HomogeneousFlowModel:
     #     self.vm = (self.initial_properties.QL + self.initial_properties.QG) / self.initial_properties.Ap
     #     print(self.initial_properties.QL)
     #     print(self.initial_properties.QG)
+
+    def HoldUp(self):
+        self.H_L = self.initial_properties.lambda_L
+        self.H_G = self.initial_properties.lambda_G
 
     def calculate_reynolds(self):
         self.Re = self.initial_properties.rho_m_ns * self.initial_properties.vm * self.initial_properties.Dh/self.initial_properties.mu_m_ns
@@ -476,16 +510,16 @@ class HomogeneousFlowModel:
         self.mass_flow_g = self.initial_properties.rho_g * self.initial_properties.QG / self.initial_properties.Ap * self.initial_properties.Ap
         self.X = self.mass_flow_g/self.mass_flow
         if self.initial_properties.Z is None and self.initial_properties.Bg is not None:
-            self.z_factor = self.initial_properties.Bg * 288.15/101325 * (self.initial_properties.Pressure[-1]/self.initial_properties.temperature)
+            self.z_factor = self.initial_properties.Bg * 288.15/101325 * (self.initial_properties.Pressure[-1]/self.initial_properties.temperature[-1])
         else:
             self.z_factor = self.initial_properties.Z
 
         if self.z_factor is not None:
-            self.Mg = self.z_factor * 8314 * self.initial_properties.temperature * self.initial_properties.rho_g / self.initial_properties.Pressure[-1]
+            self.Mg = self.z_factor * 8314 * self.initial_properties.temperature[-1] * self.initial_properties.rho_g / self.initial_properties.Pressure[-1]
         else:
             self.Mg = 28.97 * self.initial_properties.dg
 
-        self.K = - (self.mass_flow/self.initial_properties.Ap)**2 * self.Mg * self.X / (8314 * self.initial_properties.temperature * self.initial_properties.rho_g**2)
+        self.K = - (self.mass_flow/self.initial_properties.Ap)**2 * self.Mg * self.X / (8314 * self.initial_properties.temperature[-1] * self.initial_properties.rho_g**2)
 
     def total_pressure_drop(self, dl=None):
         self.dTPDdl = -(self.dPDFdl + self.dPDGdl)/(1+self.K)
@@ -509,6 +543,7 @@ class HomogeneousFlowModel:
 
     def run(self,incli=0, dl=None):
         # self.mixture_velocity()
+        self.HoldUp()
         self.calculate_reynolds()
         self.friction_coefficient()
         self.pressure_drop_gravity(incli)
@@ -533,13 +568,11 @@ class DriftFluxModel:
     def froude(self):
         return abs(self.initial_properties.vm) / np.sqrt(9.81 * self.initial_properties.Dh)
 
-
     def C0(self, Fr, theta):
         if Fr < 3.5:
             return 1.05 + 0.15 * np.sin(theta)
         else:
             return 1.20
-
 
     def v_drift(self,theta, Fr):
         if Fr < 3.5:
@@ -548,16 +581,16 @@ class DriftFluxModel:
         else:
             return 0.35*np.sqrt(9.81*self.initial_properties.Dh)*np.sin(theta)
 
-
     def v_G(self,theta, C0, vd):
         return C0*self.initial_properties.vm + vd
 
-    def HG(self,theta, vg):
-        return self.initial_properties.vsg / vg
+    def HoldUp(self,theta, vg):
+        self.H_G = self.initial_properties.vsg / vg
+        self.H_L = 1-self.H_G
 
-    def mixtureproperties(self, H_G):
-        rho_m = H_G*self.initial_properties.rho_g + (1 - H_G)*self.initial_properties.rho_l
-        mu_m = H_G*self.initial_properties.mu_g + (1 - H_G)*self.initial_properties.mu_l
+    def mixtureproperties(self):
+        rho_m = self.H_G*self.initial_properties.rho_g + self.H_L*self.initial_properties.rho_l
+        mu_m = self.H_G*self.initial_properties.mu_g + self.H_L*self.initial_properties.mu_l
         return rho_m, mu_m
 
     @staticmethod
@@ -588,17 +621,17 @@ class DriftFluxModel:
         self.mass_flow_g = self.initial_properties.rho_g * self.initial_properties.QG / self.initial_properties.Ap * self.initial_properties.Ap
         self.X = self.mass_flow_g/self.mass_flow
         if self.initial_properties.Z is None and self.initial_properties.Bg is not None:
-            self.z_factor = self.initial_properties.Bg * 288.15/101325 * (self.initial_properties.Pressure[-1]/self.initial_properties.temperature)
+            self.z_factor = self.initial_properties.Bg * 288.15/101325 * (self.initial_properties.Pressure[-1]/self.initial_properties.temperature[-1])
         else:
             self.z_factor = self.initial_properties.Z
 
         if self.z_factor is not None:
-            self.Mg = self.z_factor * 8314 * self.initial_properties.temperature * self.initial_properties.rho_g / self.initial_properties.Pressure[-1]
+            self.Mg = self.z_factor * 8314 * self.initial_properties.temperature[-1] * self.initial_properties.rho_g / self.initial_properties.Pressure[-1]
 
         else:
             self.Mg = 28.97 * self.initial_properties.dg
 
-        self.K = - (self.mass_flow/self.initial_properties.Ap)**2 * self.Mg * self.X / (8314 * self.initial_properties.temperature * self.initial_properties.rho_g**2)
+        self.K = - (self.mass_flow/self.initial_properties.Ap)**2 * self.Mg * self.X / (8314 * self.initial_properties.temperature[-1] * self.initial_properties.rho_g**2)
 
     def total_pressure_drop(self, dl=None):
         self.dTPDdl = -(self.dPDFdl + self.dPDGdl)/(1+self.K)
@@ -616,8 +649,8 @@ class DriftFluxModel:
         C0 = self.C0(Fr, theta)
         vd = self.v_drift(theta, Fr)
         vg = self.v_G(theta, C0, vd)
-        H_G = self.HG(theta, vg)
-        rho_m, mu_m = self.mixtureproperties(H_G)
+        self.HoldUp(theta, vg)
+        rho_m, mu_m = self.mixtureproperties()
         self.calculate_reynolds(rho_m, mu_m)
         self.friction_coefficient()
         self.pressure_drop_gravity(rho_m, theta)
@@ -636,8 +669,88 @@ class DriftFluxModel:
             "C0": C0,
             "vd": vd,
             "vg": vg,
-            "HG": H_G,
+            "HG": self.H_G,
             "rho_m": rho_m,
         }
 
+
+class BeggsandBrillModel:
+    """
+    Modelo Beggs and Brill (1973)
+    Todas as velocidades são em m/s
+    Ângulo em graus.
+    """
+    def __init__(self, initial_properties):
+        self.initial_properties = initial_properties
+        self.TPD = 0
+        self.PDG = 0
+        self.PDA = 0
+        self.PDF = 0
+
+    def Froude2(self):
+        return self.initial_properties.vm**2 / (9.81 * self.initial_properties.Dh)
+
+    def HoldUp(self):
+        L1 = 316 * self.initial_properties.lambda_L ** 0.302
+        L2 = 0.0009252 * self.initial_properties.lambda_L ** -2.4684
+        L3 = 0.1 * self.initial_properties.lambda_L ** -1.4516
+        L4 = 0.5 * self.initial_properties.lambda_L ** -6.738
+        # hold up ................ FAZERRRRRRRRRRRRR
+        self.H_L = self.initial_properties.lambda_L
+        self.H_G = self.initial_properties.lambda_G
+
+    def mixtureproperties(self):
+        self.rho_m = self.H_G*self.initial_properties.rho_g + self.H_L*self.initial_properties.rho_l
+
+    def calculate_reynolds(self):
+        self.Re = self.initial_properties.rho_m_ns * self.initial_properties.vm * self.initial_properties.Dh/self.initial_properties.mu_m_ns
+
+    def friction_coefficient(self):
+        fn = 0.0055 * (1+(2*10**4*self.initial_properties.rugos/self.initial_properties.Dh + 1e6/self.Re)**(1/3))
+        y = self.initial_properties.lambda_L/self.H_L**2
+        if 1.0 < y < 1.2:
+            s = math.log(2.2*y -1.2)
+        else:
+            a = -0.0523 + 3.182*math.log(y) - 0.8725*math.log(y)**2 + 0.001855* math.log(y)**4
+            s= math.log(y)/a
+        self.f =fn * np.e**s
+
+    def pressure_drop_friction(self):
+        self.dPDFdl = self.f * self.initial_properties.rho_m_ns * self.initial_properties.vm ** 2 / (2 * self.initial_properties.Dh)
+
+    def pressure_drop_gravity(self, theta=0):
+        self.dPDGdl = self.rho_m * 9.81 * np.sin(theta*np.pi/180)
+
+    def pressure_drop_acceleration_coefficent(self):
+        self.K = -(self.rho_m * self.initial_properties.vm * self.initial_properties.vsg)/self.initial_properties.Pressure[-1]
+
+    def total_pressure_drop(self, dl=None):
+        self.dTPDdl = -(self.dPDFdl + self.dPDGdl)/(1+self.K)
+        self.dPDAdl = self.dTPDdl * self.K
+        if dl is not None:
+            self.TPD = -(self.dPDFdl + self.dPDGdl) / (1 + self.K) * dl
+            self.PDA = self.dPDAdl * dl
+            self.PDG = self.dPDGdl * dl
+            self.PDF = self.dPDFdl * dl
+
+    def output(self, incli=0, dl=1):
+        self.run(incli=incli, dl=dl)
+        if dl is None:
+            print('Perda de carga por gravidade: ',self.dPDGdl,'Pa/m')
+            print('Perda de carga por fricção: ', self.dPDFdl, 'Pa/m')
+            print('Perda de carga por aceleração: ', self.dPDAdl, 'Pa/m')
+            print('Perda de carga total: ', self.dTPDdl, 'Pa/m')
+        else:
+            return self.TPD
+
+    def run(self,incli=0, dl=None):
+        self.Froude2()
+        self.HoldUp()
+        self.mixtureproperties()
+        self.calculate_reynolds()
+        self.friction_coefficient()
+        self.pressure_drop_gravity(incli)
+        self.pressure_drop_friction()
+        self.pressure_drop_acceleration_coefficent()
+        self.total_pressure_drop(dl)
 

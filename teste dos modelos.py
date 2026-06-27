@@ -1,5 +1,10 @@
 from MultiPhaseFlowModels import MultiPhaseFlowModel
 import unitsconverter
+
+#################################################################################
+################################### Homogeneo ###################################
+#################################################################################
+
 # Dados iniciais
 P_sep = unitsconverter.Pressure(5, 'bar', 'Pa') # bar
 T = unitsconverter.Temperature(55, 'C', 'K') # ° C
@@ -29,7 +34,7 @@ mu_g = unitsconverter.Viscosity(0.016, 'cp', 'Pa.s') # cp
 Modelo = MultiPhaseFlowModel(model='homogeneo', temperature=T, pressure=P_b, diameters=diam,rugosity=rugos, incli=[90], rho_o=rho_o, rho_g=rho_g, rho_w=rho_w,
                     do=unitsconverter.Density(rho_o, 'kg/m3', 'do'), dg=unitsconverter.Density(rho_g, 'kg/m3', 'dg') ,  salinity=0, QOsc=QOsc,Bo=Bo, Bw=Bw, Bg=Bg, Bsw=Bsw, RGL=Rgl, Rs=Rs, Rsw=Rsw, mu_o=mu_o, mu_w=mu_w, mu_g=mu_g, sig_og=sig_og, sig_wg=sig_wg)
 Modelo.run()
-print(Modelo.model_instance.dTPDdl)
+# print(Modelo.model_instance.dTPDdl)
 
 #################################################################################
 #################################################################################
@@ -106,9 +111,9 @@ Compressibilidade da água: 2.6816e-06 psi⁻¹
 Viscosidade da água: 1.1381 cp
 """
 
-#################################################################################
-#################################################################################
-#################################################################################
+##################################################################################
+################################### DRIFT FLUX ###################################
+##################################################################################
 
 # Dados iniciais
 P_sep = unitsconverter.Pressure(5, 'bar', 'Pa') # bar
@@ -139,6 +144,48 @@ mu_g = unitsconverter.Viscosity(0.02, 'cp', 'Pa.s') # cp
 
 Modelo = MultiPhaseFlowModel(model='driftflux', temperature=T, pressure=P_b, diameters=diam,rugosity=rugos, incli=[10], rho_l=rho_l, rho_g=rho_g,
                     dg=dg, salinity=0, QL=QLsc, QG=QG,mu_l=mu_l, mu_g=mu_g, sig_lg=sig_lg)
+# Modelo = MultiPhaseFlowModel(model='driftflux', temperature=T, pressure=P_b, diameters=diam,rugosity=rugos, incli=[10], rho_l=rho_l, rho_g=rho_g,
+#                     do=unitsconverter.Density(rho_o, 'kg/m3', 'do'), dg=unitsconverter.Density(rho_g, 'kg/m3', 'dg') ,  salinity=0, QOsc=QOsc,Bo=Bo, Bw=Bw, Bg=Bg, Bsw=Bsw, RGL=Rgl, Rs=Rs, Rsw=Rsw, mu_o=mu_o, mu_w=mu_w, mu_g=mu_g, sig_og=sig_og, sig_wg=sig_wg)
+#
+#Modelo.run()
+# print(Modelo.model_instance.dTPDdl)
+
+#######################################################################################
+################################### Beggs and Brill ###################################
+#######################################################################################
+
+
+
+
+# Dados iniciais
+P_sep = unitsconverter.Pressure(5, 'bar', 'Pa') # bar
+T = unitsconverter.Temperature(75, 'C', 'K') # ° C
+P_b = unitsconverter.Pressure(150, 'bar', 'Pa')  # bar
+L = 1500 # m
+diam = [0.1016] # m
+rugos = 0.005 * 0.0256
+QLsc = 4000 # m3/d
+Bsw = 20 # %
+RGO = 140 # sm3 / sm3
+Bw = 1.55 # m3 / sm3
+Bo = 1.15 # m3 / sm3
+Bg = 0.0095 # m3 / sm3
+Rs = 50 # sm3 / sm3
+Rsw = 10 # sm3 / s
+sig_og = 0.00841 # N/m
+sig_wg = 0.004 # N/m
+rho_o = 920 # km/m3
+rho_w = 981.4 # km/m3
+rho_g = 85 # km/m3
+QLsc = QLsc/86400
+mu_o = unitsconverter.Viscosity(0.8, 'cp', 'Pa.s') # cp
+mu_w = unitsconverter.Viscosity(0.381, 'cp', 'Pa.s') # cp
+mu_g = unitsconverter.Viscosity(0.016, 'cp', 'Pa.s') # cp
+
+
+Modelo = MultiPhaseFlowModel(model='beggsandbrill', temperature=T, pressure=P_b, diameters=diam,rugosity=rugos, incli=[45], rho_o=rho_o, rho_w=rho_w,
+                             rho_g=rho_g, salinity=0, QLsc=QLsc,mu_o=mu_o, mu_w=mu_w, mu_g=mu_g, sig_og=sig_og, sig_wg=sig_wg,
+                             Rs=Rs, Rsw=Rsw, Bg=Bg, Bo=Bo, Bw=Bw, RGO=RGO, Bsw=Bsw)
 # Modelo = MultiPhaseFlowModel(model='driftflux', temperature=T, pressure=P_b, diameters=diam,rugosity=rugos, incli=[10], rho_l=rho_l, rho_g=rho_g,
 #                     do=unitsconverter.Density(rho_o, 'kg/m3', 'do'), dg=unitsconverter.Density(rho_g, 'kg/m3', 'dg') ,  salinity=0, QOsc=QOsc,Bo=Bo, Bw=Bw, Bg=Bg, Bsw=Bsw, RGL=Rgl, Rs=Rs, Rsw=Rsw, mu_o=mu_o, mu_w=mu_w, mu_g=mu_g, sig_og=sig_og, sig_wg=sig_wg)
 #

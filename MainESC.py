@@ -15,7 +15,7 @@ L_solomarinho = 700 # m
 L_poco = 850/math.sin(60*math.pi/180)
 inclinacoes = [60,0,90]
 # inclinacoes = [60*math.pi/180,0,90*math.pi/180]
-T_poco_inicial = 55 # 80 # °C
+T_poco_inicial = 80 # °C
 T_solomarinho = 4 # °C
 T_riser_final = 15 # °C
 
@@ -44,7 +44,7 @@ diam_temp = [unitsconverter.Length(Dh_ideal, 'in', 'm')]
 rugos_temp = unitsconverter.Length(0.0075, 'in', 'm')
 
 # conversoes
-T = unitsconverter.Temperature(T_riser_final,'C','K')
+T = T_poco_inicial+273.15
 P = unitsconverter.Pressure(P_res,'bar','Pa')
 P_ref = unitsconverter.Pressure(P_sep, 'bar','Pa')
 rho_o = unitsconverter.Density(Oil.ρo, 'lbm/ft3', 'kg/m3')
@@ -63,7 +63,7 @@ Rsw = unitsconverter.Standard(Water.Rsw, 'scfstb', 'sm3sm3')
 def MultiPhaseFlowModeloptimize(Dh):
     try:
         Dh = Dh[0]
-        Modelo = MultiPhaseFlowModel(model='drift-flux', temperature=T, pressure=P, dg=dg, salinity=salinidade, do=do,
+        Modelo = MultiPhaseFlowModel(model='driftflux', temperature=T, pressure=P, dg=dg, salinity=salinidade, do=do,
                             diameters=[unitsconverter.Length(Dh, 'in', 'm')], rugosity=rugos_temp, incli=inclinacoes, rho_o=rho_o,
                             rho_g=rho_g, rho_w=rho_w, QLsc=Q, Bo=Bo, Bw=Bw, Bg=Bg, Bsw=BSW, RGL=RGL, Rs=Rs, Rsw=Rsw,
                             mu_o=mu_o, mu_w=mu_w, mu_g=mu_g, sig_og=sig_og, sig_wg=sig_wg, Z=Gas.Z,
@@ -84,15 +84,15 @@ from scipy.optimize import minimize
 
 # D ideal para homogeneo = 2.125944 pol
 # D_ideal = [unitsconverter.Length(D_ideal.x , 'in', 'm')][0]
-D_ideal = [unitsconverter.Length(2.125944, 'in', 'm')] # pol
-
+D_ideal = [unitsconverter.Length(2.196582005915114, 'in', 'm')] # pol
+# 2.196582005915114
 Modelo = MultiPhaseFlowModel(model='homogeneo', temperature=T, pressure=P, dg=dg, salinity=salinidade, do=do, diameters=D_ideal,rugosity=rugos_temp, incli=inclinacoes, rho_o=rho_o,
                              rho_g=rho_g, rho_w=rho_w, QLsc=Q,Bo=Bo, Bw=Bw, Bg=Bg, Bsw=BSW, RGL=RGL, Rs=Rs, Rsw=Rsw,
                              mu_o=mu_o, mu_w=mu_w, mu_g=mu_g, sig_og=sig_og, sig_wg=sig_wg, Z=Gas.Z, length=[L_poco,L_solomarinho,L_riser], N_division= 100, reference_pressure=P_ref, postprocess=True)
 Modelo.run()
 
-# D ideal para drift-flux = 2.20182128 pol
-D_ideal = [unitsconverter.Length(2.20182128, 'in', 'm')] # pol
+# D ideal para drift-flux = 2.3038571715354914 pol
+D_ideal = [unitsconverter.Length(2.3038571715354914, 'in', 'm')] # pol
 
 Modelo = MultiPhaseFlowModel(model='drift-flux', temperature=T, pressure=P, dg=dg, salinity=salinidade, do=do, diameters=D_ideal,rugosity=rugos_temp, incli=inclinacoes, rho_o=rho_o,
                              rho_g=rho_g, rho_w=rho_w, QLsc=Q,Bo=Bo, Bw=Bw, Bg=Bg, Bsw=BSW, RGL=RGL, Rs=Rs, Rsw=Rsw,
