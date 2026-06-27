@@ -211,19 +211,28 @@ class OilPhase:
                 self.standingCo()
 
     def standingdRsdP(self):
-        self.dRsdP = self.dg * (((1/18.2) + 1.4) * 10**(0.0125*self.API - 0.00091*self.T))**(1/0.83) # OLHAR AQUI!!!!!!!
+        A = 0.0125*self.API - 0.00091*self.T
+        B = self.P/18.2 + 1.4
+        n = 1/0.83
+        self.dRsdP =  self.dg * n * (10**A*B)**(n-1)*10**A/18.2
+        # self.dRsdP = self.dg * (10**A*B)**n
+        # self.dRsdP = self.dg * (((1/18.2) + 1.4) * 10**(0.0125*self.API - 0.00091*self.T))**(1/0.83) # OLHAR AQUI!!!!!!!
+
 
     def standingBob(self):
         self.Bob = 0.9759 + 0.00012 * (self.RGO * (self.dg / self.do) ** (0.5) + 1.25 * self.T) ** (1.2)
 
     def standingBo(self):
-        if self.P > self.Pb:
+        if self.P > self.Pb + 1e-12:
             self.Bo = self.Bob * np.exp(-self.Co * (self.P - self.Pb))
         else:
             self.Bo = 0.9759 + 0.00012*(self.Rs * (self.dg/self.do)**(0.5) + 1.25*self.T)**(1.2)
             
     def standingdBodP(self):
-        self.dBodP = 0.00012*(self.dRsdP * (1.2)*(self.dg/self.do)**(0.5) + 1.25*self.T)**(0.2) # OLHAR AQUI!!!!!!!
+        A = self.Rs * (self.dg / self.do) ** (0.5) + 1.25 * self.T
+        self.dBodP = 0.00012 * 1.2 * A**0.2 * (self.dg / self.do) ** (0.5) * self.dRsdP
+        # self.Bo = 0.9759 + 0.00012 * (self.Rs * (self.dg / self.do) ** (0.5) + 1.25 * self.T) ** (1.2)
+        # self.dBodP = 0.00012*(self.dRsdP * (1.2)*(self.dg/self.do)**(0.5) + 1.25*self.T)**(0.2) # OLHAR AQUI!!!!!!!
     
     def standingCo(self):
         if self.P >= self.Pb: # dando erro no rho ob se isso e true pq n tem bo

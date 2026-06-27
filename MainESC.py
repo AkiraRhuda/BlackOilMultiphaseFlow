@@ -1,10 +1,12 @@
 from BlackOilModel import GasPhase
 from BlackOilModel import OilPhase
 from BlackOilModel import WaterPhase
-# from backup.MultiPhaseFlowModels import MultiPhaseFlowModel
+# from OLD import MultiPhaseFlowModel
 from MultiPhaseFlowModels import MultiPhaseFlowModel
 import unitsconverter
 import math
+import numpy as np
+
 # Dados iniciais
 P_sep = 10 # 10 # bar
 P_res = 450 # bar
@@ -60,7 +62,8 @@ Rsw = unitsconverter.Standard(Water.Rsw, 'scfstb', 'sm3sm3')
 
 def MultiPhaseFlowModeloptimize(Dh):
     try:
-        Modelo = MultiPhaseFlowModel(model='homogeneo', temperature=T, pressure=P, dg=dg, salinity=salinidade, do=do,
+        Dh = Dh[0]
+        Modelo = MultiPhaseFlowModel(model='drift-flux', temperature=T, pressure=P, dg=dg, salinity=salinidade, do=do,
                             diameters=[unitsconverter.Length(Dh, 'in', 'm')], rugosity=rugos_temp, incli=inclinacoes, rho_o=rho_o,
                             rho_g=rho_g, rho_w=rho_w, QLsc=Q, Bo=Bo, Bw=Bw, Bg=Bg, Bsw=BSW, RGL=RGL, Rs=Rs, Rsw=Rsw,
                             mu_o=mu_o, mu_w=mu_w, mu_g=mu_g, sig_og=sig_og, sig_wg=sig_wg, Z=Gas.Z,
@@ -77,22 +80,21 @@ def MultiPhaseFlowModeloptimize(Dh):
 
 
 from scipy.optimize import minimize
-# from scipy.optimize import root
-# from scipy.optimize import root_scalar
-# D_ideal  = root_scalar(
-#     MultiPhaseFlowModeloptimize,
-#     bracket=[3.0,3.5],
-#     method='brentq',
-#     xtol=1e-4
-# )
+# D_ideal = minimize(MultiPhaseFlowModeloptimize,x0=np.array(4).astype(float), bounds=[[0.5,7]],method='Nelder-Mead')
 
-D_ideal = minimize(MultiPhaseFlowModeloptimize,x0=[4], bounds=[[0.5,7]],method='Nelder-Mead')
-# 2.2341
-# print(D_ideal.x)
-# D_ideal = root(MultiPhaseFlowModeloptimize,x0=7,method='hybr')
-# D_ideal_novo = 3.9 # pol
-D_ideal = [unitsconverter.Length(D_ideal.x , 'in', 'm')]
+# D ideal para homogeneo = 2.125944 pol
+# D_ideal = [unitsconverter.Length(D_ideal.x , 'in', 'm')][0]
+D_ideal = [unitsconverter.Length(2.125944, 'in', 'm')] # pol
+
 Modelo = MultiPhaseFlowModel(model='homogeneo', temperature=T, pressure=P, dg=dg, salinity=salinidade, do=do, diameters=D_ideal,rugosity=rugos_temp, incli=inclinacoes, rho_o=rho_o,
+                             rho_g=rho_g, rho_w=rho_w, QLsc=Q,Bo=Bo, Bw=Bw, Bg=Bg, Bsw=BSW, RGL=RGL, Rs=Rs, Rsw=Rsw,
+                             mu_o=mu_o, mu_w=mu_w, mu_g=mu_g, sig_og=sig_og, sig_wg=sig_wg, Z=Gas.Z, length=[L_poco,L_solomarinho,L_riser], N_division= 100, reference_pressure=P_ref, postprocess=True)
+Modelo.run()
+
+# D ideal para drift-flux = 2.20182128 pol
+D_ideal = [unitsconverter.Length(2.20182128, 'in', 'm')] # pol
+
+Modelo = MultiPhaseFlowModel(model='drift-flux', temperature=T, pressure=P, dg=dg, salinity=salinidade, do=do, diameters=D_ideal,rugosity=rugos_temp, incli=inclinacoes, rho_o=rho_o,
                              rho_g=rho_g, rho_w=rho_w, QLsc=Q,Bo=Bo, Bw=Bw, Bg=Bg, Bsw=BSW, RGL=RGL, Rs=Rs, Rsw=Rsw,
                              mu_o=mu_o, mu_w=mu_w, mu_g=mu_g, sig_og=sig_og, sig_wg=sig_wg, Z=Gas.Z, length=[L_poco,L_solomarinho,L_riser], N_division= 100, reference_pressure=P_ref, postprocess=True)
 Modelo.run()
