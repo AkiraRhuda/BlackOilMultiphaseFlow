@@ -79,7 +79,7 @@ class MultiPhaseFlowModel:
         Viscosidade do líquido em Pa.s
     sig_og : float
         Tensão óleo-gás em N/m
-    sig_og : float
+    sig_wg : float
         Tensão água-gás em N/m
     sig_lg : float
         Tensão líquido-gás em N/m
@@ -87,12 +87,20 @@ class MultiPhaseFlowModel:
         Fator Z para correção do modelo de gases ideais para gases reais
     length : list
         Comprimentos das tubulações de toda a arquitetura do sistema em m
+    N_division : int
+        Numero de divisões feitas no tubo para atualização das propriedades PVT
+    reference_pressure : float
+        Pressão de referência para calcular um erro entre a pressão ao fim da trajetória do poço e a pressão de referência
+    postprocess : bool
+        Habilita ou não a geração de gráficos e pós-processamento dos resultados
+    direction : str
+        Configura se o escoamento é 'ascendente' ou 'descendente'
     """
 
     def __init__(self, model : list, temperature, pressure, diameters : list, rugosity, incli : list, rho_l = None, rho_o = None, rho_g = None, rho_w = None,
             do = None, dg=None, salinity = None,QLsc = None, QOsc = None, QWsc = None, QL = None, QO = None, QW = None, QG=None, Bo = None, Bw = None, Bg = None,
             Bsw = None,RGL = None, RGO = None, Rs = None, Rsw = None, mu_o = None, mu_w = None, mu_g = None, mu_l = None, sig_og = None,
-            sig_wg = None, sig_lg = None, Z = None, length : list = None, N_division=None, reference_pressure = None, postprocess=False):
+            sig_wg = None, sig_lg = None, Z = None, length : list = None, N_division=None, reference_pressure = None, postprocess=False, direction='ascendente'):
         self.model = model
         self.temperature = [temperature]
         self.initial_pressure = pressure
@@ -138,6 +146,7 @@ class MultiPhaseFlowModel:
         self.postprocess = postprocess
         self.exception = False
         self.Qmassica = []
+        self.direction = direction
 
         if (self.Bo is None and self.Bw is None or self.Bg is None or self.RGL is None  and self.RGO is None or self.Rs is None  and self.Rsw
                 is None or self.mu_o is None and self.mu_w is None and self.mu_l is None or self.mu_g is None or self.sig_og is None  and
@@ -690,24 +699,101 @@ class BeggsandBrillModel:
     def Froude2(self):
         self.Fr2 = self.initial_properties.vm**2 / (9.81 * self.initial_properties.Dh)
 
-    def HoldUp(self):
-        N_LV = self.initial_properties.vsl * (self.initial_properties.rho_l/(9.81 * self.initial_properties.sig_gl))
-        if self.pattern == 'Distribuido':
-            a, b, c = 1.065, 0.5824, 0.0609
-        elif self.pattern == 'Segregado':
-            a, b, c = 0.98, 0.4846, 0.0868
-            # d, e, f, g =
-        elif self.pattern == 'Intermitente':
-            a, b, c = 0.845, 0.5351, 0.0173
+    def HoldUp(self,theta):
+        theta = theta*np.pi/180
+        N_LV = self.initial_properties.vsl * (self.initial_properties.rho_l/(9.81 * self.initial_properties.sig_lg))**1/4
+        if self.initial_properties.direction == 'ascendente':
+            if self.pattern == 'Distribuido':
+                a, b, c = 1.065, 0.5824, 0.0609
+            elif self.pattern == 'Segregado':
+                a, b, c = 0.98, 0.4846, 0.0868
+                d, e, f, g = 0.011, -3.768, 3.539, -1.614
+            elif self.pattern == 'Intermitente':
+                a, b, c = 0.845, 0.5351, 0.0173
+                d, e, f, g = 2.960, 0.305, -0.4473, 0.0978
+            if self.pattern == 'Distribuido':
+                H_LO = a*self.initial_properties.lambda_L**b/(self.Fr2**c)
+                psi = 1
+                if H_LO > self.initial_properties.lambda_L:
+                    return H_LO * psi
+                else:
+                    return self.initial_properties.lambda_L
+        else:
+            d, e, f, g = 4.7, -0.3692, 0.1244, -0.5056
+        if self.pattern != 'Transição':
+            C = (1-self.initial_properties.lambda_L)*math.log(d*self.initial_properties.lambda_L**e*N_LV**f*self.Fr2**g)
+            psi = 1 + C*(np.sin(1.8*theta) - 0.333*(np.sin(1.8*theta))**3)
+            H_LO = a * self.initial_properties.lambda_L ** b / (self.Fr2 ** c)
+            if H_LO > self.initial_properties.lambda_L:
+                return H_LO * psi
+            else:
+                return self.initial_properties.lambda_L
+        else:
+            L2 = 0.0009252 * self.initial_properties.lambda_L ** -2.4684
+            L3 = 0.1 * self.initial_properties.lambda_L ** -1.4516
+            if self.initial_properties.direction == 'ascendente':
 
-        if self.pattern == 'Distribuido':
-            H_LO = a*self.initial_properties.lambda_L**b/(self.Fr2**c)
-            psi = 1
-        # hold up ................ FAZERRRRRRRRRRRRR
-        self.H_L = H_LO * psi
+                # Segregado
+                a, b, c = 0.98, 0.4846, 0.0868
+                d, e, f, g = 0.011, -3.768, 3.539, -1.614
+
+                C_seg = (1 - self.initial_properties.lambda_L) * math.log(d * self.initial_properties.lambda_L ** e * N_LV ** f * self.Fr2 ** g)
+                psi_seg = 1 + C_seg * (np.sin(1.8 * theta) - 0.333 * (np.sin(1.8 * theta)) ** 3)
+                H_LO_seg = a * self.initial_properties.lambda_L ** b / (self.Fr2 ** c)
+                # H_L_seg = H_LO_seg * psi_seg
+
+                # Intermitente
+                a, b, c = 0.845, 0.5351, 0.0173
+                d, e, f, g = 2.960, 0.305, -0.4473, 0.0978
+                C_int = (1 - self.initial_properties.lambda_L) * math.log(d * self.initial_properties.lambda_L ** e * N_LV ** f * self.Fr2 ** g)
+                psi_int = 1 + C_int * (np.sin(1.8 * theta) - 0.333 * (np.sin(1.8 * theta)) ** 3)
+                H_LO_int = a * self.initial_properties.lambda_L ** b / (self.Fr2 ** c)
+                # H_L_int = H_LO_int * psi_int
+
+                if H_LO_seg < self.initial_properties.lambda_L:
+                    H_LO_seg = self.initial_properties.lambda_L/psi_seg # dividi por psi_seg para logo abaixo H_L_seg ser apenas lambda_L
+                if H_LO_int < self.initial_properties.lambda_L:
+                    H_LO_int = self.initial_properties.lambda_L/psi_int # mesma ideia
+
+                H_L_seg = H_LO_seg * psi_seg
+                H_L_int = H_LO_int * psi_int
+                A = (L3 - self.Fr2) / (L3 - L2)
+                H_L = A * H_L_seg + (1 - A) * H_L_int
+                return H_L
+            else:
+                # Segregado
+                a, b, c = 0.98, 0.4846, 0.0868
+                d, e, f, g = 4.7, -0.3692, 0.1244, -0.5056
+
+                C_seg = (1 - self.initial_properties.lambda_L) * math.log(
+                    d * self.initial_properties.lambda_L ** e * N_LV ** f * self.Fr2 ** g)
+                psi_seg = 1 + C_seg * (np.sin(1.8 * theta) - 0.333 * (np.sin(1.8 * theta)) ** 3)
+                H_LO_seg = a * self.initial_properties.lambda_L ** b / (self.Fr2 ** c)
+                # H_L_seg = H_LO_seg * psi_seg
+
+                # Intermitente
+                a, b, c = 0.845, 0.5351, 0.0173
+                d, e, f, g = 4.7, -0.3692, 0.1244, -0.5056
+                C_int = (1 - self.initial_properties.lambda_L) * math.log(
+                    d * self.initial_properties.lambda_L ** e * N_LV ** f * self.Fr2 ** g)
+                psi_int = 1 + C_int * (np.sin(1.8 * theta) - 0.333 * (np.sin(1.8 * theta)) ** 3)
+                H_LO_int = a * self.initial_properties.lambda_L ** b / (self.Fr2 ** c)
+                # H_L_int = H_LO_int * psi_int
+
+                if H_LO_seg < self.initial_properties.lambda_L:
+                    H_LO_seg = self.initial_properties.lambda_L / psi_seg  # dividi por psi_seg para logo abaixo H_L_seg ser apenas lambda_L
+                if H_LO_int < self.initial_properties.lambda_L:
+                    H_LO_int = self.initial_properties.lambda_L / psi_int  # mesma ideia
+
+                H_L_seg = H_LO_seg * psi_seg
+                H_L_int = H_LO_int * psi_int
+                A = (L3 - self.Fr2) / (L3 - L2)
+                H_L = A * H_L_seg + (1 - A) * H_L_int
+                return H_L
+
 
     def mixtureproperties(self):
-        self.rho_m = self.H_G*self.initial_properties.rho_g + self.H_L*self.initial_properties.rho_l
+        self.rho_m = (1-self.H_L)*self.initial_properties.rho_g + self.H_L*self.initial_properties.rho_l
 
     def calculate_reynolds(self):
         self.Re = self.initial_properties.rho_m_ns * self.initial_properties.vm * self.initial_properties.Dh/self.initial_properties.mu_m_ns
@@ -718,7 +804,7 @@ class BeggsandBrillModel:
         if 1.0 < y < 1.2:
             s = math.log(2.2*y -1.2)
         else:
-            a = -0.0523 + 3.182*math.log(y) - 0.8725*math.log(y)**2 + 0.001855* math.log(y)**4
+            a = -0.0523 + 3.182*math.log(y) - 0.8725*math.log(y)**2 + 0.001853* math.log(y)**4
             s= math.log(y)/a
         self.f =fn * np.e**s
 
@@ -767,7 +853,7 @@ class BeggsandBrillModel:
     def run(self,incli=0, dl=None):
         self.Froude2()
         self.FlowPattern()
-        self.HoldUp()
+        self.H_L =  self.HoldUp(incli)
         self.mixtureproperties()
         self.calculate_reynolds()
         self.friction_coefficient()
