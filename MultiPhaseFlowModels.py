@@ -336,7 +336,7 @@ class MultiPhaseFlowModel:
         elif model.lower() == 'drift-flux' or model.lower() == 'driftflux':
             self.model_instance = DriftFluxModel(self)
             pass
-        elif model.lower() == 'beggs' or model.lower() == 'beggsandbrill' or model.lower() == 'beggs&brill':
+        elif model.lower() == 'beggs' or model.lower() == 'beggsandbrill' or model.lower() == 'beggs&brill' or model.lower() == 'beggs and brill':
             self.model_instance = BeggsandBrillModel(self)
         else:
             raise Exception(f'{self.model} não é suportado!\nUse o modelo Homogêneo ou Drift-Flux')
@@ -701,7 +701,7 @@ class BeggsandBrillModel:
 
     def HoldUp(self,theta):
         theta = theta*np.pi/180
-        N_LV = self.initial_properties.vsl * (self.initial_properties.rho_l/(9.81 * self.initial_properties.sig_lg))**1/4
+        N_LV = self.initial_properties.vsl * (self.initial_properties.rho_l/(9.81 * self.initial_properties.sig_lg))**(1/4)
         if self.initial_properties.direction == 'ascendente':
             if self.pattern == 'Distribuido':
                 a, b, c = 1.065, 0.5824, 0.0609
@@ -794,6 +794,13 @@ class BeggsandBrillModel:
 
     def mixtureproperties(self):
         self.rho_m = (1-self.H_L)*self.initial_properties.rho_g + self.H_L*self.initial_properties.rho_l
+        if self.initial_properties.Z is None and self.initial_properties.Bg is not None:
+            self.z_factor = self.initial_properties.Bg * 288.15/101325 * (self.initial_properties.Pressure[-1]/self.initial_properties.temperature[-1])
+        else:
+            self.z_factor = self.initial_properties.Z
+
+        self.Mg = self.z_factor * 8314 * self.initial_properties.temperature[-1] * self.initial_properties.rho_g / self.initial_properties.Pressure[-1]
+        self.mass_flow = self.initial_properties.rho_m_ns * self.initial_properties.vm * self.initial_properties.Ap
 
     def calculate_reynolds(self):
         self.Re = self.initial_properties.rho_m_ns * self.initial_properties.vm * self.initial_properties.Dh/self.initial_properties.mu_m_ns

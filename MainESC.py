@@ -63,7 +63,7 @@ Rsw = unitsconverter.Standard(Water.Rsw, 'scfstb', 'sm3sm3')
 def MultiPhaseFlowModeloptimize(Dh):
     try:
         Dh = Dh[0]
-        Modelo = MultiPhaseFlowModel(model='driftflux', temperature=T, pressure=P, dg=dg, salinity=salinidade, do=do,
+        Modelo = MultiPhaseFlowModel(model='beggs', temperature=T, pressure=P, dg=dg, salinity=salinidade, do=do,
                             diameters=[unitsconverter.Length(Dh, 'in', 'm')], rugosity=rugos_temp, incli=inclinacoes, rho_o=rho_o,
                             rho_g=rho_g, rho_w=rho_w, QLsc=Q, Bo=Bo, Bw=Bw, Bg=Bg, Bsw=BSW, RGL=RGL, Rs=Rs, Rsw=Rsw,
                             mu_o=mu_o, mu_w=mu_w, mu_g=mu_g, sig_og=sig_og, sig_wg=sig_wg, Z=Gas.Z,
@@ -78,29 +78,58 @@ def MultiPhaseFlowModeloptimize(Dh):
     except:
         return 1e10
 
+#### DESCOMENTAR SE QUISER ACHAR O DIAMETRO IDEAL!!!!
 
-from scipy.optimize import minimize
+# from scipy.optimize import minimize
 # D_ideal = minimize(MultiPhaseFlowModeloptimize,x0=np.array(4).astype(float), bounds=[[0.5,7]],method='Nelder-Mead')
 
-# D ideal para homogeneo = 2.125944 pol
-# D_ideal = [unitsconverter.Length(D_ideal.x , 'in', 'm')][0]
+#################################################################################
+################################### Homogeneo ###################################
+#################################################################################
+
+# D ideal para homogeneo = 2.196582005915114 pol
 D_ideal = [unitsconverter.Length(2.196582005915114, 'in', 'm')] # pol
-# 2.196582005915114
 Modelo = MultiPhaseFlowModel(model='homogeneo', temperature=T, pressure=P, dg=dg, salinity=salinidade, do=do, diameters=D_ideal,rugosity=rugos_temp, incli=inclinacoes, rho_o=rho_o,
                              rho_g=rho_g, rho_w=rho_w, QLsc=Q,Bo=Bo, Bw=Bw, Bg=Bg, Bsw=BSW, RGL=RGL, Rs=Rs, Rsw=Rsw,
                              mu_o=mu_o, mu_w=mu_w, mu_g=mu_g, sig_og=sig_og, sig_wg=sig_wg, Z=Gas.Z, length=[L_poco,L_solomarinho,L_riser], N_division= 100, reference_pressure=P_ref, postprocess=True)
 Modelo.run()
 
+
+##################################################################################
+################################### Drift-flux ###################################
+##################################################################################
+
 # D ideal para drift-flux = 2.3038571715354914 pol
-D_ideal = [unitsconverter.Length(2.3038571715354914, 'in', 'm')] # pol
+D_ideal = [unitsconverter.Length(2.3038571715354914, 'in', 'm')]
 
 Modelo = MultiPhaseFlowModel(model='drift-flux', temperature=T, pressure=P, dg=dg, salinity=salinidade, do=do, diameters=D_ideal,rugosity=rugos_temp, incli=inclinacoes, rho_o=rho_o,
                              rho_g=rho_g, rho_w=rho_w, QLsc=Q,Bo=Bo, Bw=Bw, Bg=Bg, Bsw=BSW, RGL=RGL, Rs=Rs, Rsw=Rsw,
                              mu_o=mu_o, mu_w=mu_w, mu_g=mu_g, sig_og=sig_og, sig_wg=sig_wg, Z=Gas.Z, length=[L_poco,L_solomarinho,L_riser], N_division= 100, reference_pressure=P_ref, postprocess=True)
 Modelo.run()
 
-"""
-Massa específica da água: 62.3899 lbm/ft³
-Compressibilidade da água: 2.6816e-06 psi⁻¹
-Viscosidade da água: 1.1381 cp
-"""
+
+
+#######################################################################################
+################################### Beggs and Brill ###################################
+#######################################################################################
+
+# diametro ótimo beggs 2.382999665 pol
+D_nao_ideal = [unitsconverter.Length(3.0, 'in', 'm')]
+
+Modelo1 = MultiPhaseFlowModel(model='beggs and brill', temperature=T, pressure=P, dg=dg, salinity=salinidade, do=do, diameters=D_nao_ideal,rugosity=rugos_temp, incli=inclinacoes, rho_o=rho_o,
+                             rho_g=rho_g, rho_w=rho_w, QLsc=Q,Bo=Bo, Bw=Bw, Bg=Bg, Bsw=BSW, RGL=RGL, Rs=Rs, Rsw=Rsw,
+                             mu_o=mu_o, mu_w=mu_w, mu_g=mu_g, sig_og=sig_og, sig_wg=sig_wg, Z=Gas.Z, length=[L_poco,L_solomarinho,L_riser], N_division= 100, reference_pressure=P_ref, postprocess=True, direction='ascendente')
+Modelo1.run()
+
+D_ideal = [unitsconverter.Length(2.382999665, 'in', 'm')]
+
+Modelo2 = MultiPhaseFlowModel(model='beggs and brill', temperature=T, pressure=P, dg=dg, salinity=salinidade, do=do, diameters=D_ideal,rugosity=rugos_temp, incli=inclinacoes, rho_o=rho_o,
+                             rho_g=rho_g, rho_w=rho_w, QLsc=Q,Bo=Bo, Bw=Bw, Bg=Bg, Bsw=BSW, RGL=RGL, Rs=Rs, Rsw=Rsw,
+                             mu_o=mu_o, mu_w=mu_w, mu_g=mu_g, sig_og=sig_og, sig_wg=sig_wg, Z=Gas.Z, length=[L_poco,L_solomarinho,L_riser], N_division= 100, reference_pressure=P_ref, postprocess=True, direction='ascendente')
+Modelo2.run()
+
+Modelo1.Pressure
+Modelo2.Pressure
+
+import PostProcess
+PostProcess.run([Modelo1.Pressure,Modelo2.Pressure], Modelo2.Pos)
