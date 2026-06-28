@@ -688,16 +688,23 @@ class BeggsandBrillModel:
         self.PDF = 0
 
     def Froude2(self):
-        return self.initial_properties.vm**2 / (9.81 * self.initial_properties.Dh)
+        self.Fr2 = self.initial_properties.vm**2 / (9.81 * self.initial_properties.Dh)
 
     def HoldUp(self):
-        L1 = 316 * self.initial_properties.lambda_L ** 0.302
-        L2 = 0.0009252 * self.initial_properties.lambda_L ** -2.4684
-        L3 = 0.1 * self.initial_properties.lambda_L ** -1.4516
-        L4 = 0.5 * self.initial_properties.lambda_L ** -6.738
+        N_LV = self.initial_properties.vsl * (self.initial_properties.rho_l/(9.81 * self.initial_properties.sig_gl))
+        if self.pattern == 'Distribuido':
+            a, b, c = 1.065, 0.5824, 0.0609
+        elif self.pattern == 'Segregado':
+            a, b, c = 0.98, 0.4846, 0.0868
+            # d, e, f, g =
+        elif self.pattern == 'Intermitente':
+            a, b, c = 0.845, 0.5351, 0.0173
+
+        if self.pattern == 'Distribuido':
+            H_LO = a*self.initial_properties.lambda_L**b/(self.Fr2**c)
+            psi = 1
         # hold up ................ FAZERRRRRRRRRRRRR
-        self.H_L = self.initial_properties.lambda_L
-        self.H_G = self.initial_properties.lambda_G
+        self.H_L = H_LO * psi
 
     def mixtureproperties(self):
         self.rho_m = self.H_G*self.initial_properties.rho_g + self.H_L*self.initial_properties.rho_l
@@ -743,8 +750,23 @@ class BeggsandBrillModel:
         else:
             return self.TPD
 
+    def FlowPattern(self):
+        L1 = 316 * self.initial_properties.lambda_L ** 0.302
+        L2 = 0.0009252 * self.initial_properties.lambda_L ** -2.4684
+        L3 = 0.1 * self.initial_properties.lambda_L ** -1.4516
+        L4 = 0.5 * self.initial_properties.lambda_L ** -6.738
+        if self.initial_properties.lambda_L < 0.4 and self.Fr2 >= L1 or self.initial_properties.lambda_L >= 0.4 and self.Fr2 > L4:
+            self.pattern = 'Distribuido'
+        elif self.initial_properties.lambda_L < 0.001 and self.Fr2 < L1 or self.initial_properties.lambda_L >= 0.001 and self.Fr2 < L2:
+            self.pattern = 'Segregado'
+        elif self.initial_properties.lambda_L >= 0.01 and L2 <= self.Fr2 <= L3:
+            self.pattern = 'Transição'
+        elif 0.01 <= self.initial_properties.lambda_L <= 0.4 and L3 <= self.Fr2 <= L1 or self.initial_properties.lambda_L >= 0.4 and L3 <= self.Fr2 <= L4:
+            self.pattern = 'Intermitente'
+
     def run(self,incli=0, dl=None):
         self.Froude2()
+        self.FlowPattern()
         self.HoldUp()
         self.mixtureproperties()
         self.calculate_reynolds()
