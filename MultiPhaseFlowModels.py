@@ -22,7 +22,7 @@ class MultiPhaseFlowModel:
     reference_pressure : float
         Pressão de referência para calcular um erro ao final usando a queda de pressão total do sistema em Pa
     diameters : list
-        Lista de diâmetros dos tubos
+        Lista de diâmetros dos tubos. Caso seja empregado múltiplos tubos, utilize [[OD,ID],[OD,ID],...] ou [[D1],[D2],...]
     rugosity : float
         Rugosidade da tubulação
     incli : float
@@ -95,15 +95,21 @@ class MultiPhaseFlowModel:
         Habilita ou não a geração de gráficos e pós-processamento dos resultados
     direction : str
         Configura se o escoamento é 'ascendente' ou 'descendente'
+    gasmonophasemodel : bool
+        Configura se será utilizada a modelagem de escoamento de gás monofásico
+    limitoilholdup : float
+        Define o limite de hold-up de líquido na qual a modelagem será considerada multifásica
     """
 
-    def __init__(self, model : list, temperature, pressure, diameters : list, rugosity, incli : list, rho_l = None, rho_o = None, rho_g = None, rho_w = None,
+    def __init__(self, model : list, temperature, pressure, bubblepressure, diameters : list, rugosity, incli : list, rho_l = None, rho_o = None, rho_g = None, rho_w = None,
             do = None, dg=None, salinity = None,QLsc = None, QOsc = None, QWsc = None, QL = None, QO = None, QW = None, QG=None, Bo = None, Bw = None, Bg = None,
             Bsw = None,RGL = None, RGO = None, Rs = None, Rsw = None, mu_o = None, mu_w = None, mu_g = None, mu_l = None, sig_og = None,
-            sig_wg = None, sig_lg = None, Z = None, length : list = None, N_division=None, reference_pressure = None, postprocess=False, direction='ascendente'):
+            sig_wg = None, sig_lg = None, Z = None, length : list = None, N_division=None, reference_pressure = None, postprocess=False, direction='ascendente', usegasmonophasemodel=False,
+            limitoilholdup = 0.05 ):
         self.model = model
         self.temperature = [temperature]
         self.initial_pressure = pressure
+        self.BubblePressure = [bubblepressure]
         self.Pressure = [pressure]
         self.rho_o = rho_o
         self.rho_g = rho_g
@@ -147,6 +153,11 @@ class MultiPhaseFlowModel:
         self.exception = False
         self.Qmassica = []
         self.direction = direction
+        self.holdUpLiquid = [1]
+        self.usegasmonophasemodel = usegasmonophasemodel
+        self.limitoilholdup = limitoilholdup # 5% default
+
+
 
         if (self.Bo is None and self.Bw is None or self.Bg is None or self.RGL is None  and self.RGO is None or self.Rs is None  and self.Rsw
                 is None or self.mu_o is None and self.mu_w is None and self.mu_l is None or self.mu_g is None or self.sig_og is None  and
@@ -167,7 +178,6 @@ class MultiPhaseFlowModel:
             if self.QLsc != self.QOsc + self.QWsc:
                 raise Exception('A vazão total de líquidos não corresponde à soma das vazões de água e óleo em condição standard')
 
-        self.pipe_properties()
         self.architecture()
         # self.run()
 
@@ -213,15 +223,16 @@ class MultiPhaseFlowModel:
         self.mu_w = unitsconverter.Viscosity(Water.μw,'cp','Pa.s')
         self.mu_g = unitsconverter.Viscosity(Gas.μ,'cp','Pa.s')
         # self.run()
+        self.BubblePressure.append(unitsconverter.Pressure(Oil.Pb, 'psi','Pa'))
         self.flow(force_update=True)
         self.fractions()
         self.mixtureproperties(force_update=True)
 
 
     def run(self):
-        self.flow()
-        self.fractions()
-        self.mixtureproperties()
+        # self.flow()
+        # self.fractions()
+        # self.mixtureproperties()
 
         if isinstance(self.model, str):
             self.model = [self.model for _ in range(len(self.incli))]
@@ -238,8 +249,8 @@ class MultiPhaseFlowModel:
             actual_depth = 0
             for L, theta in zip(self.length, self.incli):
                 actual_depth += L*np.sin(theta*np.pi/180)
-            for L, theta, model in zip(self.length, self.incli, self.model):
-                self.select_model(model)
+            for L, theta, model, diameters in zip(self.length, self.incli, self.model, self.diameters):
+                self.pipe_properties(diameters)
                 accumulated_L = 0
                 while accumulated_L < L - 1e-4:
                     """if 1000 < actual_pos < 1099:
@@ -259,6 +270,17 @@ class MultiPhaseFlowModel:
                         print("Bw", self.Bw)
                         print("QW", self.QW)
                         print("QL", self.QL)"""
+                    if self.Pressure[-1] >= self.BubblePressure[-1]:  # Oil Monophase
+                        self.select_model('homogeneo')
+                        self.flow()
+                        self.fractions(force_homogeneous=True)
+                        self.mixtureproperties()
+                    else:
+                        self.select_model(model)
+                        self.flow()
+                        self.fractions()
+                        self.mixtureproperties()
+
                     # O dl pode ser alterado caso o poço não seja totalmente percorrido pelo algoritmo, gerando um dl que completa o poço!!!
                     current_dl = self.dl
                     if accumulated_L + current_dl > L:
@@ -300,6 +322,10 @@ class MultiPhaseFlowModel:
                     self.Pressure.append(Temp_Pressure) # 44866301.289638236
                     self.VM.append(self.vm)
                     self.Pos.append(actual_pos)
+                    self.holdUpLiquid.append(self.model_instance.H_L)
+                    if self.holdUpLiquid[-1] < self.limitoilholdup and self.usegasmonophasemodel is True: # Gas Monophase
+                        model = 'modelo compressível gás'
+                        self.select_model(model)
 
 
 
@@ -323,10 +349,14 @@ class MultiPhaseFlowModel:
                     self.abserro = np.inf
                     self.relerro = np.inf
 
-            self.PostProcess(self.Pressure, self.Pos,self.VM, self.temperature) # arrumar essas variaveis de entrada...
+            self.PostProcess(self.Pressure, self.Pos,self.VM, self.temperature,self.holdUpLiquid) # arrumar essas variaveis de entrada...
 
         else:
-            for theta, model in zip(self.incli, self.model):
+            for theta, model, diameters in zip(self.incli, self.model, self.diameters):
+                self.pipe_properties(diameters)
+                self.flow()
+                self.fractions()
+                self.mixtureproperties()
                 self.select_model(model)
                 self.model_instance.output(incli=theta)
 
@@ -352,15 +382,19 @@ class MultiPhaseFlowModel:
         print('Lambda G: ', self.lambda_G)
 
 
-    def pipe_properties(self):
-        if len(self.diameters) > 1:
-            self.Dh = max(self.diameters) - min(self.diameters)
-            self.Ap = np.pi/4*(max(self.diameters)**2 - min(self.diameters)**2)
+    def pipe_properties(self, diameters):
+        if isinstance(diameters, list):
+            if len(diameters) > 1:
+                self.Dh = max(diameters) - min(diameters) # Anular
+                self.Ap = np.pi/4*(max(diameters)**2 - min(diameters)**2)
+            else:
+                self.Dh = diameters[0]
+                self.Ap = np.pi/4*diameters[0]**2
         else:
-            self.Dh = self.diameters[0]
-            self.Ap = np.pi/4*self.diameters[0]**2
+            self.Dh = diameters
+            self.Ap = np.pi / 4 * diameters ** 2
 
-    def flow(self, force_update=False):
+    def flow(self, force_update=False, force_homogeous=False):
         # using SI units
         # for _ in range(2):
         if self.QL is not None and self.Bo is not None and self.Bw is not None and self.QOsc is not None:
@@ -422,26 +456,34 @@ class MultiPhaseFlowModel:
                 else:
                     self.QGsc = self.RGL * self.QLsc
                     self.QG = (self.QGsc - self.QOsc * self.Rs - self.QWsc * self.Rsw) * self.Bg
+                    # 0 = self.RGL * (self.QOsc+self.QWsc) - self.QOsc * self.Rs - self.QWsc * self.Rsw
+        if force_homogeous is True:
+            # Isso não conserva a massa!!!!
+            self.QG = 0
 
         self.vsl = self.QL / self.Ap
         self.vsg = self.QG / self.Ap
-        print('ql',self.QL)
-        print('qg',self.QG)
+        print('Ql',self.QL)
+        print('Qg',self.QG)
         self.vm = self.vsl + self.vsg
         if self.Bo is not None and self.Bg is not None and self.rho_o is not None and self.rho_w is not None:
             print('bo',self.Bo)
             print('Bg',self.Bg)
-            print('massica_o: ',self.rho_o * self.QO)
-            print('massica_w: ',self.rho_w * self.QW)
-            print('massica_g: ',self.rho_g * self.QG)
-            print('massica_total: ',self.rho_o * self.QO+self.rho_w * self.QW+self.rho_g * self.QG)
+            print('Vazão massica_o: ',self.rho_o * self.QO)
+            print('Vazão massica_w: ',self.rho_w * self.QW)
+            print('Vazão massica_g: ',self.rho_g * self.QG)
+            print('Vazão massica_total: ',self.rho_o * self.QO+self.rho_w * self.QW+self.rho_g * self.QG)
             self.Qmassica.append(self.rho_o * self.QO+self.rho_w * self.QW+self.rho_g * self.QG)
             print('\n\n\n')
 
-    def fractions(self):
+    def fractions(self, force_homogeneous=False):
         # Drift Flux nõa usa isso...
-        self.lambda_L = self.QL / (self.QL + self.QG)
-        self.lambda_G = self.QG / (self.QL + self.QG)
+        if force_homogeneous is False:
+            self.lambda_L = self.QL / (self.QL + self.QG)
+            self.lambda_G = self.QG / (self.QL + self.QG)
+        else:
+            self.lambda_L = 1
+            self.lambda_G = 0
 
     def mixtureproperties(self, force_update=False):
         if force_update is False:
@@ -473,7 +515,7 @@ class MultiPhaseFlowModel:
             self.dl = None
 
 
-    def PostProcess(self, pressure, position, vm, temperature):
+    def PostProcess(self, pressure, position, vm, temperature,holdup):
         if self.postprocess is True:
             print(self.Qmassica[0]- self.Qmassica[-1])
             print(100*(self.Qmassica[0] - self.Qmassica[-1])/self.Qmassica[-1])
@@ -481,7 +523,7 @@ class MultiPhaseFlowModel:
             print(self.Qmassica[-1])
             import PostProcess
 
-            PostProcess.run(pressure, position, vm, temperature)
+            PostProcess.run(pressure, position, vm, temperature,holdup)
 
 
 

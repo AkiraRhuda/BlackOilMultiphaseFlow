@@ -155,6 +155,10 @@ class OilPhase:
         Pressao de bolha
     T : float
         Temperatura
+    RGL : float
+        Razão gás-líquido em sm3/sm3
+    BSW : float
+        Teor de água e sedimentos no líquido em %
     units : list
         Lista com unidades de [pressão, temperatura], respectivamente
     """
@@ -165,10 +169,26 @@ class OilPhase:
         self.soluratiocorrelation, self.oilvolcorrelation, self.oilviscosityselector = soluratiocorrelation, oilvolcorrelation, oilviscosityselector
 
         self.initialproperties()
-        self.soluratio()
+        if BSW is not None:
+            if BSW < 1.0:
+                self.RGO = RGL / (1 - BSW)
+            elif BSW >= 1.0 and BSW < 100:
+                self.RGO = RGL / (1 - BSW / 100)
+            else:
+                self.RGO = RGL
+        else:
+            self.RGO = RGL
+        # self.RGO = RGL
         if Pb is None:
-            self.RGO = RGL/(1-BSW)
-            self.standingbubblepress()
+            # precisamos de Pb para avaliar Rs
+
+            # self.soluratio()
+            self.Rs = self.RGO # supomos que a razão de solubilidade é RGO
+            self.standingbubblepress() # Pb para Rs=RGO
+
+        self.soluratio() # Verifica se P>Pb e, caso contrário, calcula o novo Rs
+
+
         self.oilvolforcorrelationselector()
         self.ρ_o()
         self.oilvisccorrelationselector()
@@ -182,19 +202,19 @@ class OilPhase:
 
     # Solubility ratio #
     def soluratio(self):
-        if self.Pb is not None and self.P > self.Pb:
-            self.Rs = self.dg * (((self.Pb/18.2) + 1.4) * 10**(0.0125*self.API - 0.00091*self.T))**(1/0.83) # self.Rs = self.Rsb
-            
+        if self.P >= self.Pb:
+            # self.Rs = self.dg * (((self.Pb/18.2) + 1.4) * 10**(0.0125*self.API - 0.00091*self.T))**(1/0.83) # self.Rs = self.Rsb
+            self.Rs = self.RGO
         else:
             self.solurationcorrelationselector()
 
     def solurationcorrelationselector(self):
         if self.soluratiocorrelation == 'Standing':
-            self.standingsoluration()
+            self.standingsoluratio()
     
-    def standingsoluration(self):
+    def standingsoluratio(self):
         # if any(isinstance(self.dg, float)):
-     self.Rs = self.dg * (((self.P/18.2) + 1.4) * 10**(0.0125*self.API - 0.00091*self.T))**(1/0.83)
+        self.Rs = self.dg * (((self.P/18.2) + 1.4) * 10**(0.0125*self.API - 0.00091*self.T))**(1/0.83)
     
     # Oil volume formation factor #
     def oilvolforcorrelationselector(self):

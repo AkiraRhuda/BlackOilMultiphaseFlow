@@ -1,6 +1,6 @@
 from matplotlib import pyplot as plt
 
-def run(pressure=None, position=None, vm=None,temperature=None):
+def run(pressure=None, position=None, vm=None,temperature=None, holdup=None):
     if pressure is not None:
         if isinstance(pressure[0], list):
             for i in range(len(pressure)):
@@ -23,4 +23,10 @@ def run(pressure=None, position=None, vm=None,temperature=None):
         plt.grid(True)
         plt.xlabel('Position')
         plt.ylabel('Temperature')
+        plt.show()
+    if holdup is not None:
+        plt.plot(position, holdup)
+        plt.grid(True)
+        plt.xlabel('Position')
+        plt.ylabel('HoldUp Liquid')
         plt.show()
